@@ -1,8 +1,14 @@
 import os
-from fastapi import FastAPI
+from datetime import datetime
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
 
-app = FastAPI()
+from database import db, create_document, get_documents
+from schemas import Booking, Expense, Client, Venue
+
+app = FastAPI(title="VenueOS API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,57 +18,121 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
+    return {"message": "VenueOS Backend Running"}
 
-@app.get("/api/hello")
-def hello():
-    return {"message": "Hello from the backend API!"}
 
 @app.get("/test")
 def test_database():
-    """Test endpoint to check if database is available and accessible"""
+    """Test endpoint to verify database connectivity and show basic info"""
     response = {
         "backend": "✅ Running",
         "database": "❌ Not Available",
-        "database_url": None,
-        "database_name": None,
-        "connection_status": "Not Connected",
-        "collections": []
+        "database_url": "❌ Not Set",
+        "database_name": "❌ Not Set",
+        "collections": [],
     }
-    
+
     try:
-        # Try to import database module
-        from database import db
-        
         if db is not None:
-            response["database"] = "✅ Available"
-            response["database_url"] = "✅ Configured"
-            response["database_name"] = db.name if hasattr(db, 'name') else "✅ Connected"
-            response["connection_status"] = "Connected"
-            
-            # Try to list collections to verify connectivity
+            response["database"] = "✅ Connected"
+            response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
+            response["database_name"] = getattr(db, "name", None) or "✅ Set"
             try:
-                collections = db.list_collection_names()
-                response["collections"] = collections[:10]  # Show first 10 collections
-                response["database"] = "✅ Connected & Working"
+                response["collections"] = db.list_collection_names()[:20]
             except Exception as e:
-                response["database"] = f"⚠️  Connected but Error: {str(e)[:50]}"
-        else:
-            response["database"] = "⚠️  Available but not initialized"
-            
-    except ImportError:
-        response["database"] = "❌ Database module not found (run enable-database first)"
+                response["database"] = f"⚠️ Connected but error listing collections: {str(e)[:80]}"
     except Exception as e:
-        response["database"] = f"❌ Error: {str(e)[:50]}"
-    
-    # Check environment variables
-    import os
-    response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
-    response["database_name"] = "✅ Set" if os.getenv("DATABASE_NAME") else "❌ Not Set"
-    
+        response["database"] = f"❌ Error: {str(e)[:80]}"
+
     return response
+
+
+# --------- Bookings ---------
+@app.post("/bookings", response_model=dict)
+def create_booking(booking: Booking):
+    try:
+        booking_id = create_document("booking", booking)
+        return {"id": booking_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/bookings", response_model=List[dict])
+def list_bookings(limit: Optional[int] = 50):
+    try:
+        docs = get_documents("booking", {}, limit)
+        # Convert ObjectId for JSON serialization
+        for d in docs:
+            d["_id"] = str(d.get("_id"))
+        return docs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --------- Expenses ---------
+@app.post("/expenses", response_model=dict)
+def create_expense(expense: Expense):
+    try:
+        exp_id = create_document("expense", expense)
+        return {"id": exp_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/expenses", response_model=List[dict])
+def list_expenses(limit: Optional[int] = 100):
+    try:
+        docs = get_documents("expense", {}, limit)
+        for d in docs:
+            d["_id"] = str(d.get("_id"))
+        return docs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --------- Clients ---------
+@app.post("/clients", response_model=dict)
+def create_client(client: Client):
+    try:
+        client_id = create_document("client", client)
+        return {"id": client_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/clients", response_model=List[dict])
+def list_clients(limit: Optional[int] = 100):
+    try:
+        docs = get_documents("client", {}, limit)
+        for d in docs:
+            d["_id"] = str(d.get("_id"))
+        return docs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --------- Venues ---------
+@app.post("/venues", response_model=dict)
+def create_venue(venue: Venue):
+    try:
+        venue_id = create_document("venue", venue)
+        return {"id": venue_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/venues", response_model=List[dict])
+def list_venues(limit: Optional[int] = 100):
+    try:
+        docs = get_documents("venue", {}, limit)
+        for d in docs:
+            d["_id"] = str(d.get("_id"))
+        return docs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
